@@ -84,16 +84,6 @@ The repository must include a branch named exactly `certification` for Microsoft
 - [Privacy Policy](docs/PRIVACY_POLICY.md)
 - [Terms of Use](docs/TERMS_OF_USE.md)
 - [Support](docs/SUPPORT.md)
-- [User Guide](docs/USER_GUIDE.md)
-- [FAQ](docs/FAQ.md)
-- [Known Issues](docs/KNOWN_ISSUES.md)
-- [Release Notes](docs/RELEASE_NOTES.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Security](docs/SECURITY.md)
-- [Data Handling](docs/DATA_HANDLING.md)
-- [Test Plan](docs/TEST_PLAN.md)
-- [Certification Readiness](docs/CERTIFICATION_READINESS.md)
-- [Submission Checklist](docs/SUBMISSION_CHECKLIST.md)
 
 ## Support
 
