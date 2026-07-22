@@ -206,7 +206,21 @@
   fill: #605e5c;
   font-family: "Segoe UI", sans-serif;
   font-size: 10px;
-  pointer-events: none;
+  pointer-events: auto;
+}
+
+.compact-trend-matrix__data-notice {
+  background: #f3f2f1;
+  border-left: 3px solid #0078d4;
+  color: #323130;
+  font-size: 11px;
+  line-height: 1.35;
+  margin: 0 4px 6px;
+  max-width: 720px;
+  padding: 5px 8px;
+  position: sticky;
+  left: 4px;
+  width: fit-content;
 }
 
 .compact-trend-matrix__chart-label {
@@ -293,6 +307,7 @@
 .compact-trend-matrix__column-header {
   border-style: solid;
   line-height: 1.2;
+  text-overflow: ellipsis;
   padding: 0 5px;
   white-space: nowrap;
 }

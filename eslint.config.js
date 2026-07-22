@@ -3,7 +3,7 @@ const tsPlugin = require("@typescript-eslint/eslint-plugin");
 
 module.exports = [
   {
-    ignores: ["node_modules/**", ".tmp/**", "dist/**", "ChartFusion_Certification_Submission_*/**"]
+    ignores: ["node_modules/**", ".tmp/**", "dist/**", "Chart-Fusion-GitHub/**", "ChartFusion_Certification_Submission_*/**"]
   },
   {
     files: ["src/**/*.ts"],

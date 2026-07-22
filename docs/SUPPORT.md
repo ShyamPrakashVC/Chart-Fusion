@@ -6,7 +6,7 @@ ChartFusion Power BI custom visual.
 
 ## Supported Version
 
-Current certification build: `1.0.22.0`
+Current certification build: `1.0.23.0`
 
 ## Support Channels
 

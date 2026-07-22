@@ -120,9 +120,14 @@ export interface TrendDataModel {
   minValue: number;
   maxValue: number;
   warnings: string[];
+  notices: string[];
 }
 
 const BLANK_LABEL = "(Blank)";
+export const MAX_X_CATEGORIES = 100;
+export const MAX_SERIES = 60;
+const MAX_RUNTIME_ROWS = 5000;
+const MAX_FILTER_OPTIONS = 100;
 
 const PALETTES: Record<string, string[]> = {
   powerbi: ["#118dff", "#12239e", "#e66c37", "#6b007b", "#e044a7", "#744ec2", "#d9b300", "#d64550", "#197278", "#1aab40"],
@@ -169,18 +174,26 @@ export function parseDataView(
 ): TrendDataModel {
   const categorical = dataView?.categorical;
   const xColumn = findCategoryColumn(categorical, "xAxis") || categorical?.categories?.[0];
-  const groupedValues = categorical?.values?.grouped?.() || [];
+  const allGroupedValues = categorical?.values?.grouped?.() || [];
+  const groupedValues = allGroupedValues.slice(0, MAX_SERIES);
   const warnings: string[] = [];
+  const notices: string[] = [];
 
   if (!categorical || !xColumn || !categorical.values) {
     warnings.push("Add fields to X-axis, Y-axis / Category, and Values.");
-    return emptyModel(warnings);
+    return emptyModel(warnings, notices);
   }
 
-  const filterColumns = topFilterColumns(categorical);
+  const sourceRowCount = xColumn.values?.length || 0;
+  const runtimeRowIndices = rowIndices(xColumn.values || [], MAX_RUNTIME_ROWS);
+  const filterColumns = topFilterColumns(categorical, MAX_RUNTIME_ROWS);
   const filters = filterColumns.map((filter) => filter.definition);
-  const allowedRowIndices = rowIndices(xColumn.values || []).filter((index) => rowPassesFilters(filterColumns, filterState, index));
-  const xEntries = sortedXEntries(uniqueXEntries(xColumn, allowedRowIndices), settings.columnLabels.sortOrder);
+  const selectedFilterKeys = filterSelectionSets(filterState);
+  const filteredRowIndices = runtimeRowIndices.filter((index) => rowPassesFilters(filterColumns, selectedFilterKeys, index));
+  const availableXEntries = sortedXEntries(uniqueXEntries(xColumn, filteredRowIndices), settings.columnLabels.sortOrder);
+  const xEntries = availableXEntries.slice(0, MAX_X_CATEGORIES);
+  const selectedXKeys = new Set(xEntries.map((entry) => entry.key));
+  const allowedRowIndices = filteredRowIndices.filter((index) => selectedXKeys.has(valueKey(xColumn.values?.[index])));
   const xValues = xEntries.map((entry) => entry.label);
   const xRawValues = xEntries.map((entry) => entry.raw);
   const xIndexByKey = new Map(xEntries.map((entry, index) => [entry.key, index]));
@@ -190,6 +203,15 @@ export function parseDataView(
   const palette = PALETTES[settings.dataColors.defaultPalette] || PALETTES.powerbi;
   const series: TrendSeries[] = [];
   let hasHighlights = false;
+
+  const hostReducedData = Boolean(dataView.metadata?.segment);
+  const runtimeReducedData = sourceRowCount > MAX_RUNTIME_ROWS
+    || availableXEntries.length > MAX_X_CATEGORIES
+    || allGroupedValues.length > MAX_SERIES;
+  const reachedReductionLimit = sourceRowCount >= MAX_X_CATEGORIES || allGroupedValues.length >= MAX_SERIES;
+  if (hostReducedData || runtimeReducedData || reachedReductionLimit) {
+    notices.push(`Large dataset detected. Showing up to the Top ${MAX_X_CATEGORIES} X-axis categories and Top ${MAX_SERIES} series. Apply filters to focus the view.`);
+  }
 
   groupedValues.forEach((group: any, categoryIndex: number) => {
     const measureColumn = findMeasureColumn(group.values);
@@ -284,14 +306,27 @@ export function parseDataView(
   const additionalRows = parseAdditionalRows(groupedValues, xColumn, allowedRowIndices, xEntries, settings);
   const referenceLine = parseReferenceLine(groupedValues, xColumn, allowedRowIndices, xEntries);
 
-  const allValues = [
-    ...series.flatMap((item) => item.values.map((point) => point.highlight ?? point.value).filter((value): value is number => value !== null)),
-    ...totals.map((point) => point.value).filter((value): value is number => value !== null),
-    ...(settings.referenceLine.show && referenceLine ? referenceLine.values.map((point) => point.value).filter((value): value is number => value !== null) : [])
-  ];
+  let minValue = 0;
+  let maxValue = 0;
+  let hasNumericValue = false;
+  const includeExtentValue = (value: number | null): void => {
+    if (value === null) {
+      return;
+    }
 
-  const minValue = allValues.length ? Math.min(0, ...allValues) : 0;
-  const maxValue = allValues.length ? Math.max(0, ...allValues) : 1;
+    hasNumericValue = true;
+    minValue = Math.min(minValue, value);
+    maxValue = Math.max(maxValue, value);
+  };
+
+  series.forEach((item) => item.values.forEach((point) => includeExtentValue(point.highlight ?? point.value)));
+  totals.forEach((point) => includeExtentValue(point.value));
+  if (settings.referenceLine.show && referenceLine) {
+    referenceLine.values.forEach((point) => includeExtentValue(point.value));
+  }
+  if (!hasNumericValue) {
+    maxValue = 1;
+  }
 
   return {
     xValues,
@@ -307,7 +342,8 @@ export function parseDataView(
     hasHighlights,
     minValue,
     maxValue,
-    warnings
+    warnings,
+    notices
   };
 }
 
@@ -474,7 +510,7 @@ function uniqueAdditionalRowColumns(groups: any[]): any[] {
   return Array.from(byName.values());
 }
 
-function emptyModel(warnings: string[]): TrendDataModel {
+function emptyModel(warnings: string[], notices: string[] = []): TrendDataModel {
   return {
     xValues: [],
     xRawValues: [],
@@ -489,7 +525,8 @@ function emptyModel(warnings: string[]): TrendDataModel {
     hasHighlights: false,
     minValue: 0,
     maxValue: 1,
-    warnings
+    warnings,
+    notices
   };
 }
 
@@ -497,7 +534,7 @@ function findCategoryColumn(categorical: powerbi.DataViewCategorical | undefined
   return categorical?.categories?.find((column) => Boolean(column.source?.roles?.[roleName]));
 }
 
-function topFilterColumns(categorical: powerbi.DataViewCategorical): FilterColumnInfo[] {
+function topFilterColumns(categorical: powerbi.DataViewCategorical, rowLimit: number): FilterColumnInfo[] {
   return (["filterOne", "filterTwo"] as TopFilterRole[])
     .map((role) => {
       const column = findCategoryColumn(categorical, role);
@@ -505,7 +542,7 @@ function topFilterColumns(categorical: powerbi.DataViewCategorical): FilterColum
         return undefined;
       }
 
-      const options = uniqueFilterOptions(column);
+      const options = uniqueFilterOptions(column, rowLimit);
       return {
         role,
         column,
@@ -520,9 +557,12 @@ function topFilterColumns(categorical: powerbi.DataViewCategorical): FilterColum
     .filter((item): item is FilterColumnInfo => Boolean(item));
 }
 
-function uniqueFilterOptions(column: powerbi.DataViewCategoryColumn): TopFilterOption[] {
+function uniqueFilterOptions(column: powerbi.DataViewCategoryColumn, rowLimit: number): TopFilterOption[] {
   const options = new Map<string, TopFilterOption>();
-  (column.values || []).forEach((raw, sourceIndex) => {
+  const values = column.values || [];
+  const limit = Math.min(values.length, rowLimit);
+  for (let sourceIndex = 0; sourceIndex < limit && options.size < MAX_FILTER_OPTIONS; sourceIndex += 1) {
+    const raw = values[sourceIndex];
     const key = valueKey(raw);
     if (!options.has(key)) {
       options.set(key, {
@@ -533,7 +573,7 @@ function uniqueFilterOptions(column: powerbi.DataViewCategoryColumn): TopFilterO
         sortValue: sortableValue(raw)
       });
     }
-  });
+  }
 
   return Array.from(options.values()).sort(compareOptions);
 }
@@ -555,23 +595,35 @@ function inferFilterControl(displayName: string, options: TopFilterOption[]): To
   return "dropdown";
 }
 
-function rowIndices(values: powerbi.PrimitiveValue[]): number[] {
-  return values.map((_value, index) => index);
+function rowIndices(values: powerbi.PrimitiveValue[], limit = values.length): number[] {
+  return Array.from({ length: Math.min(values.length, limit) }, (_value, index) => index);
 }
 
-function rowPassesFilters(filters: FilterColumnInfo[], state: TopFilterState, rowIndex: number): boolean {
+type TopFilterSelectionSets = Partial<Record<TopFilterRole, Set<string>>>;
+
+function filterSelectionSets(state: TopFilterState): TopFilterSelectionSets {
+  const result: TopFilterSelectionSets = {};
+  (["filterOne", "filterTwo"] as TopFilterRole[]).forEach((role) => {
+    const selectedKeys = state[role]?.selectedKeys;
+    if (selectedKeys) {
+      result[role] = new Set(selectedKeys);
+    }
+  });
+  return result;
+}
+
+function rowPassesFilters(filters: FilterColumnInfo[], selectedKeysByRole: TopFilterSelectionSets, rowIndex: number): boolean {
   return filters.every((filter) => {
-    const selection = state[filter.role];
-    const selectedKeys = selection?.selectedKeys;
+    const selectedKeys = selectedKeysByRole[filter.role];
     if (!selectedKeys) {
       return true;
     }
 
-    if (selectedKeys.length === 0) {
+    if (selectedKeys.size === 0) {
       return false;
     }
 
-    return selectedKeys.includes(valueKey(filter.column.values?.[rowIndex]));
+    return selectedKeys.has(valueKey(filter.column.values?.[rowIndex]));
   });
 }
 

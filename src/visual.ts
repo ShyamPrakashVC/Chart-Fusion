@@ -3,7 +3,7 @@
 import type powerbi from "powerbi-visuals-api";
 import "../style/visual.less";
 import { evaluateConditionalFormatting } from "./conditionalFormatting";
-import { AdditionalRowPoint, AdditionalRowSeries, parseDataView, TopFilterControlKind, TopFilterDefinition, TopFilterRole, TopFilterState, TrendDataModel, TrendPoint, TrendSeries, TrendTotalPoint } from "./dataParser";
+import { AdditionalRowPoint, AdditionalRowSeries, MAX_SERIES, MAX_X_CATEGORIES, parseDataView, TopFilterControlKind, TopFilterDefinition, TopFilterRole, TopFilterState, TrendDataModel, TrendPoint, TrendSeries, TrendTotalPoint } from "./dataParser";
 import { attachSelectionIds, selectionContains } from "./selection";
 import { buildBasicFormattingModel, buildFormattingModel, ChartType, enumerateObjectInstances, parseVisualSettings, ShapeType, TopFilterStyleSettings, VisualSettings } from "./settings";
 import { TooltipController } from "./tooltips";
@@ -53,6 +53,8 @@ interface ChartLabelPlacement {
 type RenderedFilterKind = TopFilterControlKind | "checkbox" | "bullet";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
+const DENSE_MATRIX_CELL_LIMIT = 1500;
+const DATA_LABEL_CELL_LIMIT = 600;
 
 export class Visual implements IVisual {
   private readonly host: IVisualHost;
@@ -64,6 +66,8 @@ export class Visual implements IVisual {
   private selectedIds: any[] = [];
   private filterState: TopFilterState = {};
   private lastOptions?: VisualUpdateOptions;
+  private simplifyPointDetails = false;
+  private suppressChartDataLabels = false;
 
   constructor(options: VisualConstructorOptions) {
     this.host = options.host;
@@ -82,6 +86,11 @@ export class Visual implements IVisual {
     this.root.addEventListener("click", (event) => {
       if (event.target === this.root) {
         this.clearSelection();
+      }
+    });
+    this.root.addEventListener("contextmenu", (event) => {
+      if (!event.defaultPrevented) {
+        this.openContextMenu(undefined, event);
       }
     });
   }
@@ -139,6 +148,7 @@ export class Visual implements IVisual {
       return;
     }
 
+    this.updateDensityState();
     const content = document.createElement("div");
     content.className = "compact-trend-matrix__content";
     content.style.width = `${layout.contentWidth}px`;
@@ -152,6 +162,11 @@ export class Visual implements IVisual {
     const topControls = this.renderTopControls(topFilters);
     if (topControls) {
       content.appendChild(topControls);
+    }
+
+    const dataNotice = this.renderDataNotice();
+    if (dataNotice) {
+      content.appendChild(dataNotice);
     }
 
     if (this.settings.chart.show && this.settings.chart.chartType !== "none") {
@@ -171,6 +186,40 @@ export class Visual implements IVisual {
     }
 
     this.root.appendChild(content);
+  }
+
+  private updateDensityState(): void {
+    const matrixCellCount = this.model.xValues.length * this.model.series.length;
+    this.simplifyPointDetails = matrixCellCount > DENSE_MATRIX_CELL_LIMIT;
+    this.suppressChartDataLabels = matrixCellCount > DATA_LABEL_CELL_LIMIT;
+  }
+
+  private renderDataNotice(): HTMLDivElement | null {
+    const notices = [...this.model.notices];
+    if (this.simplifyPointDetails && this.settings.chart.show && this.settings.chart.chartType !== "none") {
+      notices.push(`Dense view optimized for performance within the Top ${MAX_X_CATEGORIES} X-axis categories and Top ${MAX_SERIES} series. Point markers and data labels are simplified above ${DENSE_MATRIX_CELL_LIMIT.toLocaleString()} category-series cells. Use filters to focus the view.`);
+    } else if (this.suppressChartDataLabels && this.settings.chart.showChartDataLabels) {
+      notices.push(`Dense view optimized for readability. Data labels are hidden above ${DATA_LABEL_CELL_LIMIT.toLocaleString()} category-series cells; hover over a mark for its value or apply filters to narrow the view.`);
+    }
+
+    const uniqueNotices = Array.from(new Set(notices));
+    if (uniqueNotices.length === 0) {
+      return null;
+    }
+
+    const notice = document.createElement("div");
+    notice.className = "compact-trend-matrix__data-notice";
+    notice.setAttribute("role", "status");
+    notice.textContent = uniqueNotices.join(" ");
+    return notice;
+  }
+
+  private shouldRenderPointMarkers(): boolean {
+    return !this.simplifyPointDetails;
+  }
+
+  private shouldRenderChartDataLabels(): boolean {
+    return this.settings.chart.showChartDataLabels && !this.suppressChartDataLabels;
   }
 
   private renderTopControls(filters: TopFilterDefinition[]): HTMLDivElement | null {
@@ -617,13 +666,23 @@ export class Visual implements IVisual {
     }
 
     if (this.settings.chart.showXAxisLabels) {
+      const fontSize = this.settings.chart.xAxisLabelFontSize;
+      const labelStep = Math.max(1, Math.ceil(Math.max(36, fontSize * 4) / Math.max(1, layout.columnWidth + layout.columnGap)));
+      const labelWidth = Math.max(18, (layout.columnWidth + layout.columnGap) * labelStep - 6);
       this.model.xValues.forEach((xValue, index) => {
+        if (index % labelStep !== 0) {
+          return;
+        }
+
         const x = this.xCenter(layout, index);
-        const label = svgText(x, layout.chartHeight - 6, xValue, "compact-trend-matrix__axis-label");
+        const displayValue = truncateTextToWidth(xValue, labelWidth, fontSize);
+        const label = svgText(x, layout.chartHeight - 6, displayValue, "compact-trend-matrix__axis-label");
         label.setAttribute("text-anchor", "middle");
+        label.setAttribute("aria-label", xValue);
         label.style.fill = this.settings.chart.xAxisLabelColor;
         label.style.fontFamily = this.settings.chart.xAxisLabelFontFamily;
-        label.style.fontSize = `${this.settings.chart.xAxisLabelFontSize}px`;
+        label.style.fontSize = `${fontSize}px`;
+        appendSvgTitle(label, xValue);
         svg.appendChild(label);
       });
     }
@@ -662,7 +721,7 @@ export class Visual implements IVisual {
         const conditional = evaluateConditionalFormatting(value, this.settings.conditionalFormatting, this.model.minValue, this.model.maxValue, false);
         const color = conditional.chartColor || series.color;
 
-        if (this.settings.chart.showMarkers) {
+        if (this.settings.chart.showMarkers && this.shouldRenderPointMarkers()) {
           const marker = this.svgShape(this.settings.chart.markerShape, x, y, this.settings.chart.markerSize, color, "#ffffff", 1);
           marker.classList.add("compact-trend-matrix__mark");
           marker.classList.toggle("is-dimmed", this.isDimmed(point.selectionId));
@@ -674,7 +733,7 @@ export class Visual implements IVisual {
           svg.appendChild(marker);
         }
 
-        if (this.settings.chart.showChartDataLabels && value !== null) {
+        if (this.shouldRenderChartDataLabels() && value !== null) {
           this.appendChartLabel(svg, layout, placedLabels, x, y, formatValue(value, this.settings.values));
         }
       });
@@ -713,7 +772,7 @@ export class Visual implements IVisual {
         this.tooltipController.addPointTooltip(rect, point, this.model.measureName, formatValue(value, this.settings.values));
         svg.appendChild(rect);
 
-        if (this.settings.chart.showChartDataLabels) {
+        if (this.shouldRenderChartDataLabels()) {
           this.appendChartLabel(svg, layout, [], barX + barWidth / 2, Math.min(y, baseline), formatValue(value, this.settings.values));
         }
       });
@@ -747,21 +806,28 @@ export class Visual implements IVisual {
         stem.setAttribute("stroke-width", String(this.settings.chart.lineWidth));
         stem.setAttribute("stroke-dasharray", lineDash(this.settings.chart.lineStyle));
         stem.classList.toggle("is-dimmed", this.isDimmed(point.selectionId));
+        if (!this.shouldRenderPointMarkers()) {
+          stem.setAttribute("tabindex", "0");
+          stem.setAttribute("role", "button");
+          stem.setAttribute("aria-label", `${point.category}, ${point.x}, ${this.model.measureName} ${formatValue(value, this.settings.values)}`);
+        }
         this.wireSelection(stem, point.selectionId);
         this.tooltipController.addPointTooltip(stem, point, this.model.measureName, formatValue(value, this.settings.values));
         svg.appendChild(stem);
 
-        const marker = this.svgShape(this.settings.chart.markerShape, x, y, Math.max(5, this.settings.chart.markerSize + 2), color, "#ffffff", 1);
-        marker.classList.add("compact-trend-matrix__mark");
-        marker.classList.toggle("is-dimmed", this.isDimmed(point.selectionId));
-        marker.setAttribute("tabindex", "0");
-        marker.setAttribute("role", "button");
-        marker.setAttribute("aria-label", `${point.category}, ${point.x}, ${this.model.measureName} ${formatValue(value, this.settings.values)}`);
-        this.wireSelection(marker, point.selectionId);
-        this.tooltipController.addPointTooltip(marker, point, this.model.measureName, formatValue(value, this.settings.values));
-        svg.appendChild(marker);
+        if (this.shouldRenderPointMarkers()) {
+          const marker = this.svgShape(this.settings.chart.markerShape, x, y, Math.max(5, this.settings.chart.markerSize + 2), color, "#ffffff", 1);
+          marker.classList.add("compact-trend-matrix__mark");
+          marker.classList.toggle("is-dimmed", this.isDimmed(point.selectionId));
+          marker.setAttribute("tabindex", "0");
+          marker.setAttribute("role", "button");
+          marker.setAttribute("aria-label", `${point.category}, ${point.x}, ${this.model.measureName} ${formatValue(value, this.settings.values)}`);
+          this.wireSelection(marker, point.selectionId);
+          this.tooltipController.addPointTooltip(marker, point, this.model.measureName, formatValue(value, this.settings.values));
+          svg.appendChild(marker);
+        }
 
-        if (this.settings.chart.showChartDataLabels) {
+        if (this.shouldRenderChartDataLabels()) {
           this.appendChartLabel(svg, layout, placedLabels, x, y, formatValue(value, this.settings.values));
         }
       });
@@ -879,7 +945,7 @@ export class Visual implements IVisual {
         this.tooltipController.addPointTooltip(rect, point, this.model.measureName, formatValue(value, this.settings.values));
         svg.appendChild(rect);
 
-        if (this.settings.chart.showChartDataLabels) {
+        if (this.shouldRenderChartDataLabels()) {
           this.appendChartLabel(svg, layout, placedLabels, this.xCenter(layout, xIndex), Math.min(y1, y2) + Math.abs(y2 - y1) / 2, formatValue(value, this.settings.values));
         }
       });
@@ -927,13 +993,16 @@ export class Visual implements IVisual {
     labelCell.style.fontSize = `${this.settings.columnLabels.fontSize}px`;
     labelCell.style.fontWeight = this.settings.columnLabels.bold ? "600" : "400";
     labelCell.style.color = this.settings.columnLabels.fontColor;
+    labelCell.title = this.model.categoryName;
     row.appendChild(labelCell);
 
     this.model.xValues.forEach((xValue) => {
       const cell = document.createElement("div");
       cell.className = "compact-trend-matrix__column-header";
       cell.setAttribute("role", "columnheader");
-      cell.textContent = xValue;
+      cell.setAttribute("aria-label", xValue);
+      cell.textContent = truncateTextToWidth(xValue, Math.max(18, layout.columnWidth - 10), this.settings.columnLabels.fontSize);
+      cell.title = xValue;
       cell.style.height = `${layout.rowHeight}px`;
       cell.style.fontFamily = this.settings.columnLabels.fontFamily;
       cell.style.fontSize = `${this.settings.columnLabels.fontSize}px`;
@@ -1244,6 +1313,7 @@ export class Visual implements IVisual {
     const text = document.createElement("span");
     text.className = "compact-trend-matrix__row-label-text";
     text.textContent = series.category;
+    text.title = series.category;
     text.style.maxWidth = `${this.settings.rowLabels.maxLabelWidth}px`;
     text.style.whiteSpace = this.settings.rowLabels.textWrap ? "normal" : "nowrap";
     text.style.textAlign = this.settings.rowLabels.alignment;
@@ -1288,6 +1358,7 @@ export class Visual implements IVisual {
     const text = document.createElement("span");
     text.className = "compact-trend-matrix__row-label-text";
     text.textContent = additionalRow.label;
+    text.title = additionalRow.label;
     text.style.maxWidth = `${this.settings.rowLabels.maxLabelWidth}px`;
     text.style.whiteSpace = this.settings.rowLabels.textWrap ? "normal" : "nowrap";
     text.style.textAlign = this.settings.additionalRows.labelAlignment;
@@ -1866,6 +1937,10 @@ export class Visual implements IVisual {
   }
 
   private wireSelection(element: Element, selectionId?: any): void {
+    element.addEventListener("contextmenu", (event: Event) => {
+      this.openContextMenu(selectionId, event as MouseEvent);
+    });
+
     if (!selectionId) {
       return;
     }
@@ -1883,6 +1958,23 @@ export class Visual implements IVisual {
         this.select(selectionId, keyboardEvent);
       }
     });
+  }
+
+  private openContextMenu(selectionId: any | undefined, event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+
+    try {
+      const result = this.selectionManager.showContextMenu(selectionId || {}, {
+        x: event.clientX,
+        y: event.clientY
+      });
+      if (result && typeof result.catch === "function") {
+        result.catch(() => undefined);
+      }
+    } catch {
+      // Context-menu support is host-provided and should not interrupt rendering.
+    }
   }
 
   private select(selectionId: any, event: MouseEvent | KeyboardEvent): void {
@@ -2081,6 +2173,26 @@ function cssAlignment(alignment: string): string {
 
 function estimateTextWidth(text: string, fontSize: number): number {
   return Math.max(10, text.length * fontSize * 0.58);
+}
+
+function truncateTextToWidth(text: string, maxWidth: number, fontSize: number): string {
+  if (estimateTextWidth(text, fontSize) <= maxWidth) {
+    return text;
+  }
+
+  const characters = Array.from(text);
+  const maxCharacters = Math.max(3, Math.floor(maxWidth / Math.max(1, fontSize * 0.58)));
+  if (maxCharacters <= 3) {
+    return "...";
+  }
+
+  return `${characters.slice(0, maxCharacters - 3).join("").trimEnd()}...`;
+}
+
+function appendSvgTitle(element: SVGElement, text: string): void {
+  const title = document.createElementNS(SVG_NS, "title");
+  title.textContent = text;
+  element.appendChild(title);
 }
 
 function labelBox(x: number, y: number, width: number, height: number, anchor: string): LabelBox {

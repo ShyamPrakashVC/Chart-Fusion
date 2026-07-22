@@ -2,7 +2,7 @@
 
 ChartFusion is a Power BI custom visual that combines a compact trend chart with an aligned matrix table. It is designed for reports that need chart movement, row-level values, totals, and compact filter controls in a single visual.
 
-Current visual version: `1.0.22.0`
+Current visual version: `1.0.23.0`
 
 ## Features
 
@@ -16,6 +16,9 @@ Current visual version: `1.0.22.0`
 - Row header markers with configurable shapes.
 - Data labels, gridline formatting, padding, colors, borders, and font controls.
 - Manual conditional-formatting rules plus Power BI color formatting support where supported by the host.
+- Host-side Top 100 X-axis and Top 60 series data reduction for large datasets.
+- Adaptive dense-data rendering with readable ellipsized labels and full-text hover titles.
+- Native Power BI right-click context menus for data points, table cells, row headers, and visual background.
 
 ## Data Roles
 
@@ -84,6 +87,16 @@ The repository must include a branch named exactly `certification` for Microsoft
 - [Privacy Policy](docs/PRIVACY_POLICY.md)
 - [Terms of Use](docs/TERMS_OF_USE.md)
 - [Support](docs/SUPPORT.md)
+- [User Guide](docs/USER_GUIDE.md)
+- [FAQ](docs/FAQ.md)
+- [Known Issues](docs/KNOWN_ISSUES.md)
+- [Release Notes](docs/RELEASE_NOTES.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Security](docs/SECURITY.md)
+- [Data Handling](docs/DATA_HANDLING.md)
+- [Test Plan](docs/TEST_PLAN.md)
+- [Certification Readiness](docs/CERTIFICATION_READINESS.md)
+- [Submission Checklist](docs/SUBMISSION_CHECKLIST.md)
 
 ## Support
 
