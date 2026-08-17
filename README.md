@@ -2,7 +2,7 @@
 
 ChartFusion is a Power BI custom visual that combines a compact trend chart with an aligned matrix table. It is designed for reports that need chart movement, row-level values, totals, and compact filter controls in a single visual.
 
-Current visual version: `1.0.23.0`
+Current visual version: `1.1.1.0`
 
 ## Features
 
@@ -12,7 +12,11 @@ Current visual version: `1.0.23.0`
 - Optional Filter 1 and Filter 2 field wells rendered as dropdown, checkbox, bullet, or timeline controls.
 - Dedicated formatting for Filter 1 and Filter 2 styles.
 - Add Target Line measure bucket for target, average, or median-style reference lines.
-- Total row and total column options.
+- Automatic or manual Y-axis scaling, plus optional DAX-driven minimum and maximum bounds with an explicit format-pane control and guidance.
+- Total row placement above or below the matrix and independent total-column controls.
+- Optional hiding of primary Values rows while retaining their chart series.
+- Independent display units for chart values, table values, and Additional Row values.
+- Percentage formatting preserved across chart labels, axes, table cells, totals, and tooltips.
 - Row header markers with configurable shapes.
 - Data labels, gridline formatting, padding, colors, borders, and font controls.
 - Manual conditional-formatting rules plus Power BI color formatting support where supported by the host.
@@ -27,6 +31,8 @@ Current visual version: `1.0.23.0`
 - `Filter 1`: optional top filter.
 - `Filter 2`: optional top filter.
 - `Values`: primary numeric measure used by the chart and matrix.
+- `Y-axis minimum (fx measure)`: optional DAX measure that dynamically sets the chart minimum.
+- `Y-axis maximum (fx measure)`: optional DAX measure that dynamically sets the chart maximum.
 - `Additional Row Values`: optional numeric measures shown as table-only rows aligned to the X-axis.
 - `Add Target Line`: optional numeric measure used as a chart reference line.
 - `Tooltips`: optional fields shown in tooltips.

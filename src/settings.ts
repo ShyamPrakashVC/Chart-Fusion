@@ -13,6 +13,7 @@ export type ChartLabelPosition = "auto" | "insideMarker" | "above" | "below" | "
 export type ColumnWidthMode = "auto" | "fixed" | "fit";
 export type SortOrder = "source" | "ascending" | "descending";
 export type DisplayUnits = "auto" | "none" | "thousands" | "millions" | "billions";
+export type InheritableDisplayUnits = "inherit" | DisplayUnits;
 export type NegativeValueStyle = "minus" | "parentheses";
 export type ConditionalApplyTo = "tableFont" | "tableBackground" | "chart" | "shape" | "total" | "both";
 export type ConditionalFormatMode = "rules" | "gradient";
@@ -26,6 +27,8 @@ export interface ChartSettings {
   yAxisStart: number;
   yAxisEnd: number;
   autoScaleYAxis: boolean;
+  useDynamicYAxisBounds: boolean;
+  displayUnits: InheritableDisplayUnits;
   showXAxisLabels: boolean;
   xAxisLabelFontFamily: string;
   xAxisLabelColor: string;
@@ -100,6 +103,7 @@ export interface TextStyleSettings {
 }
 
 export interface ValuesSettings extends TextStyleSettings {
+  showInTable: boolean;
   underline: boolean;
   horizontalAlignment: Alignment;
   displayUnits: DisplayUnits;
@@ -123,6 +127,7 @@ export interface ColumnLabelSettings extends TextStyleSettings {
 
 export interface TotalRowSettings {
   show: boolean;
+  position: "top" | "bottom";
   showColumn: boolean;
   labelText: string;
   columnLabelText: string;
@@ -146,6 +151,7 @@ export interface TotalRowSettings {
 export interface AdditionalRowsSettings {
   show: boolean;
   showTotals: boolean;
+  displayUnits: InheritableDisplayUnits;
   labelFontFamily: string;
   labelFontSize: number;
   labelFontColor: string;
@@ -315,6 +321,8 @@ export const DEFAULT_SETTINGS: VisualSettings = {
     yAxisStart: 0,
     yAxisEnd: 0,
     autoScaleYAxis: true,
+    useDynamicYAxisBounds: true,
+    displayUnits: "inherit",
     showXAxisLabels: true,
     xAxisLabelFontFamily: "Segoe UI",
     xAxisLabelColor: "#605e5c",
@@ -391,6 +399,7 @@ export const DEFAULT_SETTINGS: VisualSettings = {
     dividerWidth: 1
   },
   values: {
+    showInTable: true,
     fontFamily: "Segoe UI",
     fontSize: 12,
     fontColor: "#201f1e",
@@ -426,6 +435,7 @@ export const DEFAULT_SETTINGS: VisualSettings = {
   },
   totalRow: {
     show: true,
+    position: "bottom",
     showColumn: false,
     labelText: "Total",
     columnLabelText: "Total",
@@ -448,6 +458,7 @@ export const DEFAULT_SETTINGS: VisualSettings = {
   additionalRows: {
     show: true,
     showTotals: true,
+    displayUnits: "inherit",
     labelFontFamily: 'Segoe UI',
     labelFontSize: 12,
     labelFontColor: "#201f1e",
@@ -637,6 +648,8 @@ export function parseVisualSettings(dataView?: DataView): VisualSettings {
       yAxisStart: getObjectValue(objects, "chart", "yAxisStart", DEFAULT_SETTINGS.chart.yAxisStart),
       yAxisEnd: getObjectValue(objects, "chart", "yAxisEnd", DEFAULT_SETTINGS.chart.yAxisEnd),
       autoScaleYAxis: getObjectValue(objects, "chart", "autoScaleYAxis", DEFAULT_SETTINGS.chart.autoScaleYAxis),
+      useDynamicYAxisBounds: getObjectValue(objects, "chart", "useDynamicYAxisBounds", DEFAULT_SETTINGS.chart.useDynamicYAxisBounds),
+      displayUnits: getObjectValue(objects, "chart", "displayUnits", DEFAULT_SETTINGS.chart.displayUnits),
       showXAxisLabels: getObjectValue(objects, "chart", "showXAxisLabels", DEFAULT_SETTINGS.chart.showXAxisLabels),
       xAxisLabelFontFamily: getObjectValue(objects, "chart", "xAxisLabelFontFamily", DEFAULT_SETTINGS.chart.xAxisLabelFontFamily),
       xAxisLabelColor: getFillColor(objects, "chart", "xAxisLabelColor", DEFAULT_SETTINGS.chart.xAxisLabelColor),
@@ -713,6 +726,7 @@ export function parseVisualSettings(dataView?: DataView): VisualSettings {
       dividerWidth: clamp(getObjectValue(objects, "table", "dividerWidth", DEFAULT_SETTINGS.table.dividerWidth), 0, 8)
     },
     values: {
+      showInTable: getObjectValue(objects, "values", "showInTable", DEFAULT_SETTINGS.values.showInTable),
       fontFamily: getObjectValue(objects, "values", "fontFamily", DEFAULT_SETTINGS.values.fontFamily),
       fontSize: clamp(getObjectValue(objects, "values", "fontSize", DEFAULT_SETTINGS.values.fontSize), 7, 48),
       fontColor: getFillColor(objects, "values", "fontColor", DEFAULT_SETTINGS.values.fontColor),
@@ -748,6 +762,7 @@ export function parseVisualSettings(dataView?: DataView): VisualSettings {
     },
     totalRow: {
       show: getObjectValue(objects, "totalRow", "show", DEFAULT_SETTINGS.totalRow.show),
+      position: getObjectValue(objects, "totalRow", "position", DEFAULT_SETTINGS.totalRow.position),
       showColumn: getObjectValue(objects, "totalRow", "showColumn", DEFAULT_SETTINGS.totalRow.showColumn),
       labelText: getObjectValue(objects, "totalRow", "labelText", DEFAULT_SETTINGS.totalRow.labelText),
       columnLabelText: getObjectValue(objects, "totalRow", "columnLabelText", DEFAULT_SETTINGS.totalRow.columnLabelText),
@@ -770,6 +785,7 @@ export function parseVisualSettings(dataView?: DataView): VisualSettings {
     additionalRows: {
       show: getObjectValue(objects, "additionalRows", "show", DEFAULT_SETTINGS.additionalRows.show),
       showTotals: getObjectValue(objects, "additionalRows", "showTotals", DEFAULT_SETTINGS.additionalRows.showTotals),
+      displayUnits: getObjectValue(objects, "additionalRows", "displayUnits", DEFAULT_SETTINGS.additionalRows.displayUnits),
       labelFontFamily: getObjectValue(objects, "additionalRows", "labelFontFamily", DEFAULT_SETTINGS.additionalRows.labelFontFamily),
       labelFontSize: clamp(getObjectValue(objects, "additionalRows", "labelFontSize", DEFAULT_SETTINGS.additionalRows.labelFontSize), 7, 48),
       labelFontColor: getFillColor(objects, "additionalRows", "labelFontColor", DEFAULT_SETTINGS.additionalRows.labelFontColor),
@@ -903,9 +919,21 @@ export function buildFormattingModel(settings: VisualSettings, series: SeriesCol
             item("None", "none")
           ]),
           numeric("chart", "chartHeight", "Chart height", settings.chart.chartHeight),
-          numeric("chart", "yAxisStart", "Y-axis start", settings.chart.yAxisStart),
-          numeric("chart", "yAxisEnd", "Y-axis end", settings.chart.yAxisEnd),
-          toggle("chart", "autoScaleYAxis", "Auto scale Y-axis", settings.chart.autoScaleYAxis)
+          toggle("chart", "autoScaleYAxis", "Auto scale Y-axis", settings.chart.autoScaleYAxis),
+          withSliceInfo(
+            toggle("chart", "useDynamicYAxisBounds", "Use dynamic (fx) measures", settings.chart.useDynamicYAxisBounds),
+            "Add DAX measures to Y-axis minimum and Y-axis maximum under Build visual. When enabled, assigned measures override automatic or manual bounds."
+          ),
+          withSliceInfo(
+            numeric("chart", "yAxisStart", "Y-axis start (manual)", settings.chart.yAxisStart),
+            "Used when Auto scale Y-axis is Off and no dynamic minimum measure is assigned.",
+            settings.chart.autoScaleYAxis
+          ),
+          withSliceInfo(
+            numeric("chart", "yAxisEnd", "Y-axis end (manual)", settings.chart.yAxisEnd),
+            "Used when Auto scale Y-axis is Off and no dynamic maximum measure is assigned.",
+            settings.chart.autoScaleYAxis
+          )
         ]
       },
       {
@@ -918,7 +946,8 @@ export function buildFormattingModel(settings: VisualSettings, series: SeriesCol
           toggle("chart", "showYAxis", "Show y-axis", settings.chart.showYAxis),
           fontFamily("chart", "yAxisLabelFontFamily", "Y-axis label font family", settings.chart.yAxisLabelFontFamily),
           color("chart", "yAxisLabelColor", "Y-axis label color", settings.chart.yAxisLabelColor),
-          numeric("chart", "yAxisLabelFontSize", "Y-axis label font size", settings.chart.yAxisLabelFontSize)
+          numeric("chart", "yAxisLabelFontSize", "Y-axis label font size", settings.chart.yAxisLabelFontSize),
+          dropdown("chart", "displayUnits", "Chart display units", settings.chart.displayUnits, displayUnitItems(true))
         ]
       },
       {
@@ -1002,6 +1031,7 @@ export function buildFormattingModel(settings: VisualSettings, series: SeriesCol
       numeric("table", "dividerWidth", "Divider width", settings.table.dividerWidth)
     ]),
     card("values", "Values", [
+      toggle("values", "showInTable", "Show values in table", settings.values.showInTable),
       fontFamily("values", "fontFamily", "Font family", settings.values.fontFamily),
       numeric("values", "fontSize", "Font size", settings.values.fontSize),
       color("values", "fontColor", "Font color", settings.values.fontColor),
@@ -1009,13 +1039,7 @@ export function buildFormattingModel(settings: VisualSettings, series: SeriesCol
       toggle("values", "italic", "Italic", settings.values.italic),
       toggle("values", "underline", "Underline", settings.values.underline),
       dropdown("values", "horizontalAlignment", "Horizontal alignment", settings.values.horizontalAlignment, alignmentItems()),
-      dropdown("values", "displayUnits", "Display units", settings.values.displayUnits, [
-        item("Auto", "auto"),
-        item("None", "none"),
-        item("Thousands", "thousands"),
-        item("Millions", "millions"),
-        item("Billions", "billions")
-      ]),
+      dropdown("values", "displayUnits", "Table display units", settings.values.displayUnits, displayUnitItems(false)),
       numeric("values", "decimalPlaces", "Decimal places", settings.values.decimalPlaces),
       toggle("values", "thousandSeparator", "Thousand separator", settings.values.thousandSeparator),
       text("values", "blankValueText", "Blank value display text", settings.values.blankValueText),
@@ -1043,6 +1067,7 @@ export function buildFormattingModel(settings: VisualSettings, series: SeriesCol
     ]),
     card("totalRow", "Total row", [
       toggle("totalRow", "show", "Show total row", settings.totalRow.show),
+      dropdown("totalRow", "position", "Total row position", settings.totalRow.position, [item("Before first row", "top"), item("After last row", "bottom")]),
       toggle("totalRow", "showColumn", "Show total column", settings.totalRow.showColumn),
       text("totalRow", "labelText", "Total label text", settings.totalRow.labelText),
       text("totalRow", "columnLabelText", "Total column label text", settings.totalRow.columnLabelText),
@@ -1142,9 +1167,17 @@ export function buildBasicFormattingModel(settings: VisualSettings): powerbi.vis
           item("None", "none")
         ]),
         numeric("chart", "chartHeight", "Chart height", settings.chart.chartHeight),
+        toggle("chart", "autoScaleYAxis", "Auto scale Y-axis", settings.chart.autoScaleYAxis),
+        withSliceInfo(
+          toggle("chart", "useDynamicYAxisBounds", "Use dynamic (fx) measures", settings.chart.useDynamicYAxisBounds),
+          "Add DAX measures to Y-axis minimum and Y-axis maximum under Build visual. Assigned measures override automatic or manual bounds."
+        ),
+        withSliceInfo(numeric("chart", "yAxisStart", "Y-axis start (manual)", settings.chart.yAxisStart), "Used only when automatic scaling is Off.", settings.chart.autoScaleYAxis),
+        withSliceInfo(numeric("chart", "yAxisEnd", "Y-axis end (manual)", settings.chart.yAxisEnd), "Used only when automatic scaling is Off.", settings.chart.autoScaleYAxis),
         toggle("chart", "showMarkers", "Show markers", settings.chart.showMarkers),
         numeric("chart", "markerSize", "Marker size", settings.chart.markerSize),
-        toggle("chart", "showChartDataLabels", "Show data labels on chart", settings.chart.showChartDataLabels)
+        toggle("chart", "showChartDataLabels", "Show data labels on chart", settings.chart.showChartDataLabels),
+        dropdown("chart", "displayUnits", "Chart display units", settings.chart.displayUnits, displayUnitItems(true))
       ]),
       card("table", "Table", [
         toggle("table", "show", "Show table", settings.table.show),
@@ -1155,9 +1188,19 @@ export function buildBasicFormattingModel(settings: VisualSettings): powerbi.vis
         toggle("table", "showCategoryShapes", "Show category shapes", settings.table.showCategoryShapes)
       ]),
       card("values", "Values", [
+        toggle("values", "showInTable", "Show values in table", settings.values.showInTable),
         numeric("values", "fontSize", "Font size", settings.values.fontSize),
         color("values", "fontColor", "Font color", settings.values.fontColor),
-        toggle("values", "bold", "Bold", settings.values.bold)
+        toggle("values", "bold", "Bold", settings.values.bold),
+        dropdown("values", "displayUnits", "Table display units", settings.values.displayUnits, displayUnitItems(false))
+      ]),
+      card("totalRow", "Total row", [
+        toggle("totalRow", "show", "Show total row", settings.totalRow.show),
+        dropdown("totalRow", "position", "Total row position", settings.totalRow.position, [item("Before first row", "top"), item("After last row", "bottom")])
+      ]),
+      card("additionalRows", "Additional rows", [
+        toggle("additionalRows", "show", "Show additional rows", settings.additionalRows.show),
+        dropdown("additionalRows", "displayUnits", "Additional row display units", settings.additionalRows.displayUnits, displayUnitItems(true))
       ])
     ]
   } as powerbi.visuals.FormattingModel;
@@ -1237,6 +1280,8 @@ function legacyPropertiesForObject(objectName: string, settings: VisualSettings)
         yAxisStart: settings.chart.yAxisStart,
         yAxisEnd: settings.chart.yAxisEnd,
         autoScaleYAxis: settings.chart.autoScaleYAxis,
+        useDynamicYAxisBounds: settings.chart.useDynamicYAxisBounds,
+        displayUnits: settings.chart.displayUnits,
         showXAxisLabels: settings.chart.showXAxisLabels,
         xAxisLabelFontFamily: settings.chart.xAxisLabelFontFamily,
         xAxisLabelColor: fill(settings.chart.xAxisLabelColor),
@@ -1332,6 +1377,7 @@ function legacyPropertiesForObject(objectName: string, settings: VisualSettings)
       };
     case "values":
       return {
+        showInTable: settings.values.showInTable,
         fontFamily: settings.values.fontFamily,
         fontSize: settings.values.fontSize,
         fontColor: fill(settings.values.fontColor),
@@ -1370,6 +1416,7 @@ function legacyPropertiesForObject(objectName: string, settings: VisualSettings)
     case "totalRow":
       return {
         show: settings.totalRow.show,
+        position: settings.totalRow.position,
         showColumn: settings.totalRow.showColumn,
         labelText: settings.totalRow.labelText,
         columnLabelText: settings.totalRow.columnLabelText,
@@ -1393,6 +1440,7 @@ function legacyPropertiesForObject(objectName: string, settings: VisualSettings)
       return {
         show: settings.additionalRows.show,
         showTotals: settings.additionalRows.showTotals,
+        displayUnits: settings.additionalRows.displayUnits,
         labelFontFamily: settings.additionalRows.labelFontFamily,
         labelFontSize: settings.additionalRows.labelFontSize,
         labelFontColor: fill(settings.additionalRows.labelFontColor),
@@ -1648,6 +1696,14 @@ function numeric(objectName: string, propertyName: string, displayName: string, 
   return slice(objectName, propertyName, displayName, NUMERIC, value);
 }
 
+function withSliceInfo(sliceValue: any, infoIconText: string, disabled = false): any {
+  return {
+    ...sliceValue,
+    infoIconText,
+    ...(disabled ? { disabled: true } : {})
+  };
+}
+
 function text(objectName: string, propertyName: string, displayName: string, value: string): any {
   return slice(objectName, propertyName, displayName, TEXT, value, { placeholder: "" });
 }
@@ -1748,6 +1804,7 @@ function additionalRowsCard(settings: VisualSettings, rows: AdditionalRowFormatC
     numeric("additionalRows", "labelPaddingRight", "Label padding right", settings.additionalRows.labelPaddingRight)
   ];
   const valueSlices = [
+    dropdown("additionalRows", "displayUnits", "Additional row display units", settings.additionalRows.displayUnits, displayUnitItems(true)),
     fontFamily("additionalRows", "valueFontFamily", "Font family", settings.additionalRows.valueFontFamily),
     numeric("additionalRows", "valueFontSize", "Value font size", settings.additionalRows.valueFontSize),
     color("additionalRows", "valueFontColor", "Value font color", settings.additionalRows.valueFontColor),
@@ -1911,6 +1968,17 @@ function item(displayName: string, value: string): any {
 
 function alignmentItems(): any[] {
   return [item("Left", "left"), item("Center", "center"), item("Right", "right")];
+}
+
+function displayUnitItems(includeInherit: boolean): any[] {
+  return [
+    ...(includeInherit ? [item("Same as Values", "inherit")] : []),
+    item("Auto", "auto"),
+    item("None", "none"),
+    item("Thousands", "thousands"),
+    item("Millions", "millions"),
+    item("Billions", "billions")
+  ];
 }
 
 function verticalAlignmentItems(): any[] {

@@ -47,6 +47,7 @@ export interface ReferenceLinePoint {
 
 export interface ReferenceLineModel {
   displayName: string;
+  format?: string;
   values: ReferenceLinePoint[];
 }
 
@@ -114,6 +115,9 @@ export interface TrendDataModel {
   filters: TopFilterDefinition[];
   referenceLine: ReferenceLineModel | null;
   measureName: string;
+  measureFormat?: string;
+  dynamicYAxisStart: number | null;
+  dynamicYAxisEnd: number | null;
   xAxisName: string;
   categoryName: string;
   hasHighlights: boolean;
@@ -203,6 +207,7 @@ export function parseDataView(
   const palette = PALETTES[settings.dataColors.defaultPalette] || PALETTES.powerbi;
   const series: TrendSeries[] = [];
   let hasHighlights = false;
+  let measureFormat: string | undefined;
 
   const hostReducedData = Boolean(dataView.metadata?.segment);
   const runtimeReducedData = sourceRowCount > MAX_RUNTIME_ROWS
@@ -218,6 +223,8 @@ export function parseDataView(
     if (!measureColumn) {
       return;
     }
+
+    measureFormat ??= measureColumn.source?.format;
 
     const categoryLabel = formatCategoryValue(group.name);
     const objects = group.objects;
@@ -305,6 +312,8 @@ export function parseDataView(
   });
   const additionalRows = parseAdditionalRows(groupedValues, xColumn, allowedRowIndices, xEntries, settings);
   const referenceLine = parseReferenceLine(groupedValues, xColumn, allowedRowIndices, xEntries);
+  const dynamicYAxisStart = dynamicAxisBound(groupedValues, "yAxisMinimum", allowedRowIndices, "minimum");
+  const dynamicYAxisEnd = dynamicAxisBound(groupedValues, "yAxisMaximum", allowedRowIndices, "maximum");
 
   let minValue = 0;
   let maxValue = 0;
@@ -320,7 +329,6 @@ export function parseDataView(
   };
 
   series.forEach((item) => item.values.forEach((point) => includeExtentValue(point.highlight ?? point.value)));
-  totals.forEach((point) => includeExtentValue(point.value));
   if (settings.referenceLine.show && referenceLine) {
     referenceLine.values.forEach((point) => includeExtentValue(point.value));
   }
@@ -337,6 +345,9 @@ export function parseDataView(
     filters,
     referenceLine,
     measureName,
+    measureFormat,
+    dynamicYAxisStart,
+    dynamicYAxisEnd,
     xAxisName,
     categoryName,
     hasHighlights,
@@ -471,6 +482,7 @@ function parseReferenceLine(
 
   return {
     displayName: referenceColumn.source?.displayName || "Reference line",
+    format: referenceColumn.source?.format,
     values: xEntries.map((entry, xIndex) => {
       const point = aggregated.get(entry.key);
       return {
@@ -481,6 +493,32 @@ function parseReferenceLine(
       };
     })
   };
+}
+
+function dynamicAxisBound(groups: any[], roleName: "yAxisMinimum" | "yAxisMaximum", rowIndicesToUse: number[], bound: "minimum" | "maximum"): number | null {
+  let result: number | null = null;
+
+  groups.forEach((group) => {
+    const column = findRoleMeasureColumn(group.values, roleName);
+    if (!column) {
+      return;
+    }
+
+    rowIndicesToUse.forEach((rowIndex) => {
+      const value = toNumber(column.values?.[rowIndex]);
+      if (value === null) {
+        return;
+      }
+
+      result = result === null
+        ? value
+        : bound === "minimum"
+          ? Math.min(result, value)
+          : Math.max(result, value);
+    });
+  });
+
+  return result;
 }
 
 function firstReferenceLineColumn(groups: any[]): any {
@@ -520,6 +558,9 @@ function emptyModel(warnings: string[], notices: string[] = []): TrendDataModel 
     filters: [],
     referenceLine: null,
     measureName: "Values",
+    measureFormat: undefined,
+    dynamicYAxisStart: null,
+    dynamicYAxisEnd: null,
     xAxisName: "X-axis",
     categoryName: "Category",
     hasHighlights: false,
@@ -669,7 +710,12 @@ function firstMeasureName(groups: any[], roleName: string): string | undefined {
 }
 
 function findMeasureColumn(values: any[] = []): any {
-  return findRoleMeasureColumn(values, "values") || values.find((column) => isNumericColumn(column) && !column?.source?.roles?.additionalRowValues && !column?.source?.roles?.referenceLine && !column?.source?.roles?.tooltips);
+  return findRoleMeasureColumn(values, "values") || values.find((column) => isNumericColumn(column)
+    && !column?.source?.roles?.additionalRowValues
+    && !column?.source?.roles?.referenceLine
+    && !column?.source?.roles?.yAxisMinimum
+    && !column?.source?.roles?.yAxisMaximum
+    && !column?.source?.roles?.tooltips);
 }
 
 function findRoleMeasureColumn(values: any[] = [], roleName: string): any {

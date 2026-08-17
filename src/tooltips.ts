@@ -2,7 +2,6 @@ import type powerbi from "powerbi-visuals-api";
 import { select } from "d3-selection";
 import { createTooltipServiceWrapper, ITooltipServiceWrapper } from "powerbi-visuals-utils-tooltiputils";
 import { TrendPoint, TrendTotalPoint, TooltipItem } from "./dataParser";
-import { formatValue } from "./valueFormatter";
 
 type IVisualHost = powerbi.extensibility.visual.IVisualHost;
 type VisualTooltipDataItem = powerbi.extensibility.VisualTooltipDataItem;
@@ -39,13 +38,13 @@ export class TooltipController {
     );
   }
 
-  public addTotalTooltip(element: Element, point: TrendTotalPoint, label: string, measureName: string, settings: Parameters<typeof formatValue>[1]): void {
+  public addTotalTooltip(element: Element, point: TrendTotalPoint, label: string, measureName: string, formattedValue: string): void {
     this.addTooltip(
       element,
       () => [
         { displayName: "X-axis", value: point.x },
         { displayName: "Category", value: label },
-        { displayName: measureName, value: formatValue(point.value, settings) }
+        { displayName: measureName, value: formattedValue }
       ],
       undefined
     );

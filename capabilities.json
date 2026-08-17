@@ -36,6 +36,28 @@
       "description": "One numeric measure used by both the chart and table."
     },
     {
+      "displayName": "Y-axis minimum (fx measure)",
+      "name": "yAxisMinimum",
+      "kind": "Measure",
+      "requiredTypes": [
+        {
+          "numeric": true
+        }
+      ],
+      "description": "Optional DAX measure that dynamically sets the chart Y-axis minimum."
+    },
+    {
+      "displayName": "Y-axis maximum (fx measure)",
+      "name": "yAxisMaximum",
+      "kind": "Measure",
+      "requiredTypes": [
+        {
+          "numeric": true
+        }
+      ],
+      "description": "Optional DAX measure that dynamically sets the chart Y-axis maximum."
+    },
+    {
       "displayName": "Additional Row Values",
       "name": "additionalRowValues",
       "kind": "Measure",
@@ -75,6 +97,12 @@
             "max": 1
           },
           "values": {
+            "max": 1
+          },
+          "yAxisMinimum": {
+            "max": 1
+          },
+          "yAxisMaximum": {
             "max": 1
           },
           "additionalRowValues": {
@@ -126,6 +154,16 @@
               {
                 "bind": {
                   "to": "values"
+                }
+              },
+              {
+                "bind": {
+                  "to": "yAxisMinimum"
+                }
+              },
+              {
+                "bind": {
+                  "to": "yAxisMaximum"
                 }
               },
               {
@@ -213,6 +251,44 @@
           "displayName": "Auto scale Y-axis",
           "type": {
             "bool": true
+          }
+        },
+        "useDynamicYAxisBounds": {
+          "displayName": "Use dynamic (fx) measures",
+          "description": "Use the optional Y-axis minimum and Y-axis maximum measure wells from Build visual. Assigned measures override automatic or manual bounds.",
+          "type": {
+            "bool": true
+          }
+        },
+        "displayUnits": {
+          "displayName": "Chart display units",
+          "type": {
+            "enumeration": [
+              {
+                "displayName": "Same as Values",
+                "value": "inherit"
+              },
+              {
+                "displayName": "Auto",
+                "value": "auto"
+              },
+              {
+                "displayName": "None",
+                "value": "none"
+              },
+              {
+                "displayName": "Thousands",
+                "value": "thousands"
+              },
+              {
+                "displayName": "Millions",
+                "value": "millions"
+              },
+              {
+                "displayName": "Billions",
+                "value": "billions"
+              }
+            ]
           }
         },
         "showXAxisLabels": {
@@ -1087,6 +1163,12 @@
     "values": {
       "displayName": "Values",
       "properties": {
+        "showInTable": {
+          "displayName": "Show values in table",
+          "type": {
+            "bool": true
+          }
+        },
         "fontFamily": {
           "displayName": "Font family",
           "type": {
@@ -1517,6 +1599,21 @@
             "bool": true
           }
         },
+        "position": {
+          "displayName": "Total row position",
+          "type": {
+            "enumeration": [
+              {
+                "displayName": "Before first row",
+                "value": "top"
+              },
+              {
+                "displayName": "After last row",
+                "value": "bottom"
+              }
+            ]
+          }
+        },
         "showColumn": {
           "displayName": "Show total column",
           "type": {
@@ -1665,6 +1762,37 @@
           "displayName": "Show row totals",
           "type": {
             "bool": true
+          }
+        },
+        "displayUnits": {
+          "displayName": "Additional row display units",
+          "type": {
+            "enumeration": [
+              {
+                "displayName": "Same as Values",
+                "value": "inherit"
+              },
+              {
+                "displayName": "Auto",
+                "value": "auto"
+              },
+              {
+                "displayName": "None",
+                "value": "none"
+              },
+              {
+                "displayName": "Thousands",
+                "value": "thousands"
+              },
+              {
+                "displayName": "Millions",
+                "value": "millions"
+              },
+              {
+                "displayName": "Billions",
+                "value": "billions"
+              }
+            ]
           }
         },
         "labelFontSize": {

@@ -5,9 +5,9 @@ import "../style/visual.less";
 import { evaluateConditionalFormatting } from "./conditionalFormatting";
 import { AdditionalRowPoint, AdditionalRowSeries, MAX_SERIES, MAX_X_CATEGORIES, parseDataView, TopFilterControlKind, TopFilterDefinition, TopFilterRole, TopFilterState, TrendDataModel, TrendPoint, TrendSeries, TrendTotalPoint } from "./dataParser";
 import { attachSelectionIds, selectionContains } from "./selection";
-import { buildBasicFormattingModel, buildFormattingModel, ChartType, enumerateObjectInstances, parseVisualSettings, ShapeType, TopFilterStyleSettings, VisualSettings } from "./settings";
+import { buildBasicFormattingModel, buildFormattingModel, ChartType, enumerateObjectInstances, parseVisualSettings, ShapeType, TopFilterStyleSettings, ValuesSettings, VisualSettings } from "./settings";
 import { TooltipController } from "./tooltips";
-import { formatValue } from "./valueFormatter";
+import { formatValue, isPercentageFormat } from "./valueFormatter";
 
 type IVisual = powerbi.extensibility.visual.IVisual;
 type VisualConstructorOptions = powerbi.extensibility.visual.VisualConstructorOptions;
@@ -62,6 +62,8 @@ export class Visual implements IVisual {
   private readonly selectionManager: any;
   private readonly tooltipController: TooltipController;
   private settings: VisualSettings;
+  private chartFormattingSettings: ValuesSettings;
+  private additionalFormattingSettings: ValuesSettings;
   private model: TrendDataModel;
   private selectedIds: any[] = [];
   private filterState: TopFilterState = {};
@@ -73,6 +75,8 @@ export class Visual implements IVisual {
     this.host = options.host;
     this.selectionManager = this.host.createSelectionManager();
     this.settings = parseVisualSettings();
+    this.chartFormattingSettings = this.settings.values;
+    this.additionalFormattingSettings = this.settings.values;
     this.model = parseDataView(undefined, this.settings);
 
     this.root = document.createElement("div");
@@ -102,6 +106,8 @@ export class Visual implements IVisual {
       this.notifyRenderingStarted(options);
       const dataView = options.dataViews?.[0];
       this.settings = parseVisualSettings(dataView);
+      this.chartFormattingSettings = this.withDisplayUnits(this.settings.chart.displayUnits);
+      this.additionalFormattingSettings = this.withDisplayUnits(this.settings.additionalRows.displayUnits);
       this.model = attachSelectionIds(this.host, dataView, parseDataView(dataView, this.settings, (category, index) => this.getThemeColor(category, index), this.effectiveFilterState()));
       this.render(options);
       this.notifyRenderingFinished(options);
@@ -655,7 +661,7 @@ export class Visual implements IVisual {
         }
 
         if (this.settings.chart.showYAxis) {
-          const label = svgText(layout.plotLeft - 6, y + 3, formatAxisValue(value), "compact-trend-matrix__axis-label");
+          const label = svgText(layout.plotLeft - 6, y + 3, this.formatAxisTick(value), "compact-trend-matrix__axis-label");
           label.setAttribute("text-anchor", "end");
           label.style.fill = this.settings.chart.yAxisLabelColor;
           label.style.fontFamily = this.settings.chart.yAxisLabelFontFamily;
@@ -727,14 +733,14 @@ export class Visual implements IVisual {
           marker.classList.toggle("is-dimmed", this.isDimmed(point.selectionId));
           marker.setAttribute("tabindex", "0");
           marker.setAttribute("role", "button");
-          marker.setAttribute("aria-label", `${point.category}, ${point.x}, ${this.model.measureName} ${formatValue(value, this.settings.values)}`);
+          marker.setAttribute("aria-label", `${point.category}, ${point.x}, ${this.model.measureName} ${this.formatChartValue(value)}`);
           this.wireSelection(marker, point.selectionId);
-          this.tooltipController.addPointTooltip(marker, point, this.model.measureName, formatValue(value, this.settings.values));
+          this.tooltipController.addPointTooltip(marker, point, this.model.measureName, this.formatChartValue(value));
           svg.appendChild(marker);
         }
 
         if (this.shouldRenderChartDataLabels() && value !== null) {
-          this.appendChartLabel(svg, layout, placedLabels, x, y, formatValue(value, this.settings.values));
+          this.appendChartLabel(svg, layout, placedLabels, x, y, this.formatChartValue(value));
         }
       });
     });
@@ -767,13 +773,13 @@ export class Visual implements IVisual {
         rect.setAttribute("fill", color);
         rect.setAttribute("tabindex", "0");
         rect.setAttribute("role", "button");
-        rect.setAttribute("aria-label", `${point.category}, ${point.x}, ${this.model.measureName} ${formatValue(value, this.settings.values)}`);
+        rect.setAttribute("aria-label", `${point.category}, ${point.x}, ${this.model.measureName} ${this.formatChartValue(value)}`);
         this.wireSelection(rect, point.selectionId);
-        this.tooltipController.addPointTooltip(rect, point, this.model.measureName, formatValue(value, this.settings.values));
+        this.tooltipController.addPointTooltip(rect, point, this.model.measureName, this.formatChartValue(value));
         svg.appendChild(rect);
 
         if (this.shouldRenderChartDataLabels()) {
-          this.appendChartLabel(svg, layout, [], barX + barWidth / 2, Math.min(y, baseline), formatValue(value, this.settings.values));
+          this.appendChartLabel(svg, layout, [], barX + barWidth / 2, Math.min(y, baseline), this.formatChartValue(value));
         }
       });
     });
@@ -809,10 +815,10 @@ export class Visual implements IVisual {
         if (!this.shouldRenderPointMarkers()) {
           stem.setAttribute("tabindex", "0");
           stem.setAttribute("role", "button");
-          stem.setAttribute("aria-label", `${point.category}, ${point.x}, ${this.model.measureName} ${formatValue(value, this.settings.values)}`);
+          stem.setAttribute("aria-label", `${point.category}, ${point.x}, ${this.model.measureName} ${this.formatChartValue(value)}`);
         }
         this.wireSelection(stem, point.selectionId);
-        this.tooltipController.addPointTooltip(stem, point, this.model.measureName, formatValue(value, this.settings.values));
+        this.tooltipController.addPointTooltip(stem, point, this.model.measureName, this.formatChartValue(value));
         svg.appendChild(stem);
 
         if (this.shouldRenderPointMarkers()) {
@@ -821,14 +827,14 @@ export class Visual implements IVisual {
           marker.classList.toggle("is-dimmed", this.isDimmed(point.selectionId));
           marker.setAttribute("tabindex", "0");
           marker.setAttribute("role", "button");
-          marker.setAttribute("aria-label", `${point.category}, ${point.x}, ${this.model.measureName} ${formatValue(value, this.settings.values)}`);
+          marker.setAttribute("aria-label", `${point.category}, ${point.x}, ${this.model.measureName} ${this.formatChartValue(value)}`);
           this.wireSelection(marker, point.selectionId);
-          this.tooltipController.addPointTooltip(marker, point, this.model.measureName, formatValue(value, this.settings.values));
+          this.tooltipController.addPointTooltip(marker, point, this.model.measureName, this.formatChartValue(value));
           svg.appendChild(marker);
         }
 
         if (this.shouldRenderChartDataLabels()) {
-          this.appendChartLabel(svg, layout, placedLabels, x, y, formatValue(value, this.settings.values));
+          this.appendChartLabel(svg, layout, placedLabels, x, y, this.formatChartValue(value));
         }
       });
     });
@@ -886,12 +892,12 @@ export class Visual implements IVisual {
           this.settings.referenceLine.markerBorderWidth
         );
         marker.classList.add("compact-trend-matrix__mark");
-        marker.setAttribute("aria-label", `${referenceLine.displayName}, ${point.x}, ${formatValue(point.value, this.settings.values)}`);
+        marker.setAttribute("aria-label", `${referenceLine.displayName}, ${point.x}, ${this.formatReferenceValue(point.value)}`);
         svg.appendChild(marker);
       }
 
       if (this.settings.referenceLine.showDataLabels && point.value !== null) {
-        this.appendReferenceLabel(svg, layout, placedReferenceLabels, x, y, formatValue(point.value, this.settings.values));
+        this.appendReferenceLabel(svg, layout, placedReferenceLabels, x, y, this.formatReferenceValue(point.value));
       }
     });
 
@@ -940,13 +946,13 @@ export class Visual implements IVisual {
         rect.setAttribute("fill", color);
         rect.setAttribute("tabindex", "0");
         rect.setAttribute("role", "button");
-        rect.setAttribute("aria-label", `${point.category}, ${point.x}, ${this.model.measureName} ${formatValue(value, this.settings.values)}`);
+        rect.setAttribute("aria-label", `${point.category}, ${point.x}, ${this.model.measureName} ${this.formatChartValue(value)}`);
         this.wireSelection(rect, point.selectionId);
-        this.tooltipController.addPointTooltip(rect, point, this.model.measureName, formatValue(value, this.settings.values));
+        this.tooltipController.addPointTooltip(rect, point, this.model.measureName, this.formatChartValue(value));
         svg.appendChild(rect);
 
         if (this.shouldRenderChartDataLabels()) {
-          this.appendChartLabel(svg, layout, placedLabels, this.xCenter(layout, xIndex), Math.min(y1, y2) + Math.abs(y2 - y1) / 2, formatValue(value, this.settings.values));
+          this.appendChartLabel(svg, layout, placedLabels, this.xCenter(layout, xIndex), Math.min(y1, y2) + Math.abs(y2 - y1) / 2, this.formatChartValue(value));
         }
       });
     });
@@ -964,9 +970,15 @@ export class Visual implements IVisual {
       table.appendChild(this.renderColumnHeader(layout));
     }
 
-    this.model.series.forEach((series) => {
-      table.appendChild(this.renderSeriesRow(series, layout));
-    });
+    if (this.settings.totalRow.show && this.settings.totalRow.position === "top") {
+      table.appendChild(this.renderTotalRow(layout));
+    }
+
+    if (this.settings.values.showInTable) {
+      this.model.series.forEach((series) => {
+        table.appendChild(this.renderSeriesRow(series, layout));
+      });
+    }
 
     if (this.settings.additionalRows.show) {
       this.model.additionalRows.forEach((row) => {
@@ -974,7 +986,7 @@ export class Visual implements IVisual {
       });
     }
 
-    if (this.settings.totalRow.show) {
+    if (this.settings.totalRow.show && this.settings.totalRow.position === "bottom") {
       table.appendChild(this.renderTotalRow(layout));
     }
 
@@ -1116,7 +1128,7 @@ export class Visual implements IVisual {
 
   private renderValueCell(point: TrendPoint, layout: VisualLayout): HTMLDivElement {
     const value = point.value;
-    const formattedValue = formatValue(value, this.settings.values);
+    const formattedValue = this.formatTableValue(value);
     const conditional = evaluateConditionalFormatting(value, this.settings.conditionalFormatting, this.model.minValue, this.model.maxValue, false);
     const cell = document.createElement("div");
     cell.className = "compact-trend-matrix__value-cell";
@@ -1147,7 +1159,7 @@ export class Visual implements IVisual {
   }
 
   private renderAdditionalRowValueCell(additionalRow: AdditionalRowSeries, point: AdditionalRowPoint, layout: VisualLayout): HTMLDivElement {
-    const formattedValue = formatValue(point.value, this.settings.values, additionalRow.format);
+    const formattedValue = this.formatAdditionalValue(point.value, additionalRow.format);
     const cell = document.createElement("div");
     cell.className = "compact-trend-matrix__value-cell compact-trend-matrix__additional-row-value";
     cell.setAttribute("role", "gridcell");
@@ -1174,7 +1186,7 @@ export class Visual implements IVisual {
     const cell = document.createElement("div");
     cell.className = "compact-trend-matrix__total-cell compact-trend-matrix__additional-row-total-cell";
     cell.setAttribute("role", "gridcell");
-    cell.textContent = formatValue(value, this.settings.values, additionalRow.format);
+    cell.textContent = this.formatAdditionalValue(value, additionalRow.format);
     cell.style.height = `${layout.rowHeight}px`;
     cell.style.padding = `0 ${this.settings.table.cellPadding}px`;
     cell.style.fontFamily = this.additionalRowValueFontFamily(additionalRow);
@@ -1207,7 +1219,7 @@ export class Visual implements IVisual {
     const cell = document.createElement("div");
     cell.className = "compact-trend-matrix__total-cell compact-trend-matrix__total-column-cell";
     cell.setAttribute("role", "gridcell");
-    cell.textContent = formatValue(value, this.settings.values);
+    cell.textContent = this.formatTableValue(value);
     cell.style.height = `${layout.rowHeight}px`;
     cell.style.padding = `0 ${this.settings.table.cellPadding}px`;
     cell.style.fontFamily = this.settings.values.fontFamily;
@@ -1227,10 +1239,17 @@ export class Visual implements IVisual {
     const row = this.createTableRow(layout, "compact-trend-matrix__total-row");
     row.setAttribute("role", "row");
     row.style.background = this.totalBackgroundColor();
-    row.style.paddingTop = this.settings.totalRow.showDivider ? `${this.settings.totalRow.dividerSpacing}px` : "0";
+    const totalAtTop = this.settings.totalRow.position === "top";
+    row.style.paddingTop = this.settings.totalRow.showDivider && !totalAtTop ? `${this.settings.totalRow.dividerSpacing}px` : "0";
+    row.style.paddingBottom = this.settings.totalRow.showDivider && totalAtTop ? `${this.settings.totalRow.dividerSpacing}px` : "0";
 
     if (this.settings.totalRow.showDivider) {
-      row.style.borderTop = `${Math.max(1, this.settings.table.dividerWidth)}px solid ${this.settings.totalRow.dividerColor}`;
+      const divider = `${Math.max(1, this.settings.table.dividerWidth)}px solid ${this.settings.totalRow.dividerColor}`;
+      if (totalAtTop) {
+        row.style.borderBottom = divider;
+      } else {
+        row.style.borderTop = divider;
+      }
     }
 
     const labelCell = document.createElement("div");
@@ -1267,7 +1286,8 @@ export class Visual implements IVisual {
     const cell = document.createElement("div");
     cell.className = "compact-trend-matrix__total-cell";
     cell.setAttribute("role", "gridcell");
-    cell.textContent = formatValue(point.value, this.settings.values);
+    const formattedValue = this.formatTableValue(point.value);
+    cell.textContent = formattedValue;
     cell.style.height = `${layout.rowHeight}px`;
     cell.style.padding = `0 ${this.settings.table.cellPadding}px`;
     cell.style.fontFamily = this.settings.values.fontFamily;
@@ -1280,7 +1300,7 @@ export class Visual implements IVisual {
     cell.style.borderRadius = `${this.totalCardCornerRadius()}px`;
     cell.style.textAlign = this.settings.values.horizontalAlignment;
     cell.style.justifyContent = cssAlignment(this.settings.values.horizontalAlignment);
-    this.tooltipController.addTotalTooltip(cell, point, this.settings.totalRow.labelText, this.model.measureName, this.settings.values);
+    this.tooltipController.addTotalTooltip(cell, point, this.settings.totalRow.labelText, this.model.measureName, formattedValue);
     return cell;
   }
 
@@ -1290,7 +1310,7 @@ export class Visual implements IVisual {
     const cell = document.createElement("div");
     cell.className = "compact-trend-matrix__total-cell compact-trend-matrix__grand-total-cell";
     cell.setAttribute("role", "gridcell");
-    cell.textContent = formatValue(value, this.settings.values);
+    cell.textContent = this.formatTableValue(value);
     cell.style.height = `${layout.rowHeight}px`;
     cell.style.padding = `0 ${this.settings.table.cellPadding}px`;
     cell.style.fontFamily = this.settings.values.fontFamily;
@@ -1500,8 +1520,26 @@ export class Visual implements IVisual {
       max = this.settings.chart.yAxisEnd;
     }
 
+    if (this.settings.chart.useDynamicYAxisBounds) {
+      if (this.model.dynamicYAxisStart !== null) {
+        min = this.model.dynamicYAxisStart;
+      }
+
+      if (this.model.dynamicYAxisEnd !== null) {
+        max = this.model.dynamicYAxisEnd;
+      }
+    }
+
+    if (max < min) {
+      min = values[0];
+      max = values[1];
+    }
+
     if (min === max) {
-      max = min + 1;
+      const minimumPadding = isPercentageFormat(this.model.measureFormat) ? 0.01 : 1;
+      const padding = Math.max(minimumPadding, Math.abs(min) * 0.1);
+      min -= padding;
+      max += padding;
     }
 
     const plotHeight = Math.max(1, layout.plotBottom - layout.plotTop);
@@ -1555,6 +1593,44 @@ export class Visual implements IVisual {
     }
 
     return point.highlight ?? point.value;
+  }
+
+  private withDisplayUnits(displayUnits: VisualSettings["chart"]["displayUnits"]): ValuesSettings {
+    if (displayUnits === "inherit" || displayUnits === this.settings.values.displayUnits) {
+      return this.settings.values;
+    }
+
+    return { ...this.settings.values, displayUnits };
+  }
+
+  private formatTableValue(value: number | null | undefined): string {
+    const sourceFormat = isPercentageFormat(this.model.measureFormat) ? this.model.measureFormat : undefined;
+    return formatValue(value, this.settings.values, sourceFormat);
+  }
+
+  private formatChartValue(value: number | null | undefined): string {
+    const sourceFormat = isPercentageFormat(this.model.measureFormat) ? this.model.measureFormat : undefined;
+    return formatValue(value, this.chartFormattingSettings, sourceFormat);
+  }
+
+  private formatAxisTick(value: number): string {
+    if (isPercentageFormat(this.model.measureFormat) || this.settings.chart.displayUnits !== "inherit") {
+      return this.formatChartValue(value);
+    }
+
+    return formatAxisValue(value);
+  }
+
+  private formatAdditionalValue(value: number | null | undefined, sourceFormat?: string): string {
+    const effectiveSourceFormat = this.settings.additionalRows.displayUnits === "inherit" || isPercentageFormat(sourceFormat)
+      ? sourceFormat
+      : undefined;
+    return formatValue(value, this.additionalFormattingSettings, effectiveSourceFormat);
+  }
+
+  private formatReferenceValue(value: number | null | undefined): string {
+    const sourceFormat = isPercentageFormat(this.model.referenceLine?.format) ? this.model.referenceLine?.format : undefined;
+    return formatValue(value, this.chartFormattingSettings, sourceFormat);
   }
 
   private appendChartLabel(svg: SVGSVGElement, layout: VisualLayout, placedLabels: LabelBox[], pointX: number, pointY: number, text: string): void {
